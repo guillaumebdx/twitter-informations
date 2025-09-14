@@ -4,6 +4,7 @@ namespace App\Repository;
 
 use App\Entity\Info;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -16,28 +17,33 @@ class InfoRepository extends ServiceEntityRepository
         parent::__construct($registry, Info::class);
     }
 
-    //    /**
-    //     * @return Info[] Returns an array of Info objects
-    //     */
-    //    public function findByExampleField($value): array
-    //    {
-    //        return $this->createQueryBuilder('i')
-    //            ->andWhere('i.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->orderBy('i.id', 'ASC')
-    //            ->setMaxResults(10)
-    //            ->getQuery()
-    //            ->getResult()
-    //        ;
-    //    }
+    /**
+     * Find paginated Info entities
+     * 
+     * @param int $page Current page number (starts at 1)
+     * @param int $limit Number of items per page
+     * @return array Contains 'paginator', 'totalItems', 'totalPages', 'currentPage'
+     */
+    public function findPaginated(int $page = 1, int $limit = 10): array
+    {
+        $page = max(1, $page);
+        $offset = ($page - 1) * $limit;
 
-    //    public function findOneBySomeField($value): ?Info
-    //    {
-    //        return $this->createQueryBuilder('i')
-    //            ->andWhere('i.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->getQuery()
-    //            ->getOneOrNullResult()
-    //        ;
-    //    }
+        $query = $this->createQueryBuilder('i')
+            ->orderBy('i.createdAt', 'DESC')
+            ->setFirstResult($offset)
+            ->setMaxResults($limit)
+            ->getQuery();
+
+        $paginator = new Paginator($query);
+        $totalItems = count($paginator);
+        $totalPages = ceil($totalItems / $limit);
+
+        return [
+            'paginator' => $paginator,
+            'totalItems' => $totalItems,
+            'totalPages' => $totalPages,
+            'currentPage' => $page,
+        ];
+    }
 }

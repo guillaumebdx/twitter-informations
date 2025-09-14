@@ -1,0 +1,123 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Flux RSS - {{ parent() }}{% endblock %}
+
+{% block body %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-rss text-warning me-2"></i>Flux RSS</h1>
+    <a href="{{ path('app_flux_new') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-1"></i>Ajouter un flux
+    </a>
+</div>
+
+{% if fluxes is empty %}
+    <div class="alert alert-info" role="alert">
+        <i class="bi bi-info-circle me-2"></i>
+        Aucun flux RSS n'a été configuré. Commence par en ajouter un !
+    </div>
+{% else %}
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">{{ fluxes|length }} flux RSS configuré{{ fluxes|length > 1 ? 's' : '' }}</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th scope="col">Nom</th>
+                        <th scope="col">URL</th>
+                        <th scope="col">Créé le</th>
+                        <th scope="col" class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for flux in fluxes %}
+                        <tr>
+                            <td>
+                                <strong>{{ flux.name }}</strong>
+                            </td>
+                            <td>
+                                <a href="{{ flux.url }}" target="_blank" class="text-decoration-none">
+                                    <i class="bi bi-link-45deg me-1"></i>
+                                    {{ flux.url|length > 50 ? flux.url|slice(0, 50) ~ '...' : flux.url }}
+                                </a>
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar me-1"></i>
+                                    {{ flux.createdAt|date('d/m/Y H:i') }}
+                                </small>
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group" role="group">
+                                    <a href="{{ path('app_flux_show', {'id': flux.id}) }}" 
+                                       class="btn btn-outline-primary btn-sm" 
+                                       title="Voir">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <a href="{{ path('app_flux_edit', {'id': flux.id}) }}" 
+                                       class="btn btn-outline-secondary btn-sm" 
+                                       title="Modifier">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <button type="button" 
+                                            class="btn btn-outline-danger btn-sm" 
+                                            title="Supprimer"
+                                            onclick="confirmDelete({{ flux.id }}, '{{ flux.name|e('js') }}')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endif %}
+
+<!-- Modal de confirmation de suppression -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">
+                    <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+                    Confirmer la suppression
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Es-tu sûr de vouloir supprimer le flux RSS "<span id="fluxName"></span>" ?
+                <br><small class="text-muted">Cette action est irréversible.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <form id="deleteForm" method="post" style="display: inline;">
+                    <input type="hidden" name="_token" id="deleteToken">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>Supprimer
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function confirmDelete(fluxId, fluxName) {
+    document.getElementById('fluxName').textContent = fluxName;
+    document.getElementById('deleteForm').action = '{{ path('app_flux_delete', {'id': '__ID__'}) }}'.replace('__ID__', fluxId);
+    
+    // Générer le token CSRF (vous devrez peut-être l'ajuster selon votre configuration)
+    fetch('{{ path('app_flux_delete', {'id': '__ID__'}) }}'.replace('__ID__', fluxId), {
+        method: 'HEAD'
+    }).then(() => {
+        // Pour simplifier, on utilise un token générique ici
+        document.getElementById('deleteToken').value = '{{ csrf_token('delete') }}';
+    });
+    
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+</script>
+{% endblock %}

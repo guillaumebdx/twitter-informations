@@ -1,0 +1,46 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Accueil - {{ parent() }}{% endblock %}
+
+{% block body %}
+<div class="row">
+    <div class="col-12">
+        <div class="jumbotron bg-primary text-white rounded p-5 mb-4">
+            <h1 class="display-4">Bienvenue sur Mon Bot Twitter</h1>
+            <p class="lead">Gère et consulte les informations collectées par ton bot Twitter.</p>
+            <hr class="my-4">
+            <p>Utilise la navigation ci-dessus pour accéder aux différentes fonctionnalités.</p>
+            <a class="btn btn-light btn-lg" href="{{ path('app_info_index') }}" role="button">
+                <i class="bi bi-info-circle me-2"></i>Voir les Infos
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-info-circle text-primary me-2"></i>Informations
+                </h5>
+                <p class="card-text">Consulte toutes les informations collectées par ton bot Twitter.</p>
+                <a href="{{ path('app_info_index') }}" class="btn btn-primary">Accéder</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-gear text-secondary me-2"></i>Paramètres
+                </h5>
+                <p class="card-text">Configure ton bot et personnalise ses paramètres.</p>
+                <button class="btn btn-secondary" onclick="alert('Fonctionnalité à venir')">
+                    Bientôt disponible
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

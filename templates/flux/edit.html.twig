@@ -1,0 +1,67 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Modifier {{ flux.name }} - {{ parent() }}{% endblock %}
+
+{% block body %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ path('app_home') }}">Accueil</a></li>
+                <li class="breadcrumb-item"><a href="{{ path('app_flux_index') }}">Flux RSS</a></li>
+                <li class="breadcrumb-item"><a href="{{ path('app_flux_show', {'id': flux.id}) }}">{{ flux.name }}</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Modifier</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h1 class="h4 mb-0">
+                    <i class="bi bi-pencil text-secondary me-2"></i>
+                    Modifier le flux RSS "{{ flux.name }}"
+                </h1>
+            </div>
+            <div class="card-body">
+                {{ form_start(form, {'attr': {'class': 'needs-validation', 'novalidate': true}}) }}
+                
+                <div class="mb-3">
+                    {{ form_label(form.name, null, {'label_attr': {'class': 'form-label'}}) }}
+                    {{ form_widget(form.name) }}
+                    {{ form_errors(form.name) }}
+                    <div class="form-text">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Donne un nom descriptif à ton flux RSS
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    {{ form_label(form.url, null, {'label_attr': {'class': 'form-label'}}) }}
+                    {{ form_widget(form.url) }}
+                    {{ form_errors(form.url) }}
+                    <div class="form-text">
+                        <i class="bi bi-info-circle me-1"></i>
+                        L'URL complète du flux RSS
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-1"></i>
+                        Enregistrer les modifications
+                    </button>
+                    <a href="{{ path('app_flux_show', {'id': flux.id}) }}" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left me-1"></i>
+                        Annuler
+                    </a>
+                </div>
+
+                {{ form_end(form) }}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
