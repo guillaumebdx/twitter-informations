@@ -6,6 +6,8 @@ services:
     container_name: symfony-app
     volumes:
       - .:/var/www/html:delegated
+      - /var/www/html/vendor
+      - /var/www/html/var
     depends_on:
       - db
     environment:
