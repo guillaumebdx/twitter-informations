@@ -46,4 +46,37 @@ class InfoRepository extends ServiceEntityRepository
             'currentPage' => $page,
         ];
     }
+
+    /**
+     * Find the latest Info entities to check for duplicates
+     * 
+     * @param int $limit Number of latest entries to retrieve
+     * @return Info[]
+     */
+    public function findLatest(int $limit = 10): array
+    {
+        return $this->createQueryBuilder('i')
+            ->orderBy('i.createdAt', 'DESC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Check if an Info with the same URL already exists
+     * 
+     * @param string $url The URL to check
+     * @return bool
+     */
+    public function existsByUrl(string $url): bool
+    {
+        $count = $this->createQueryBuilder('i')
+            ->select('COUNT(i.id)')
+            ->where('i.url = :url')
+            ->setParameter('url', $url)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return $count > 0;
+    }
 }

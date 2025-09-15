@@ -3,9 +3,11 @@
 namespace App\Command;
 
 use App\Service\RssFetcher;
+use App\Service\LLM\RssSummarizer;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -16,9 +18,20 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 class FetchRssCommand extends Command
 {
     public function __construct(
-        private RssFetcher $rssFetcher
+        private RssFetcher $rssFetcher,
+        private RssSummarizer $rssSummarizer
     ) {
         parent::__construct();
+    }
+
+    protected function configure(): void
+    {
+        $this->addOption(
+            'llm',
+            null,
+            InputOption::VALUE_NONE,
+            'Utilise OpenAI pour analyser les flux et créer automatiquement une entité Info'
+        );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -63,36 +76,68 @@ class FetchRssCommand extends Command
             }
         }
 
-        // Affichage du contenu fusionné
+        // Traitement selon l'option --llm
         if ($successCount > 0) {
-            $io->section('📄 Contenu des flux RSS (brut)');
+            $useLlm = $input->getOption('llm');
             
-            $mergedContent = $this->rssFetcher->mergeFeeds($results);
-            
-            if ($output->isVerbose()) {
-                // Mode verbose : affichage complet
-                $output->writeln($mergedContent);
-            } else {
-                // Mode normal : affichage avec pagination
-                $lines = explode("\n", $mergedContent);
-                $totalLines = count($lines);
+            if ($useLlm) {
+                // Mode LLM : traitement avec OpenAI
+                $io->section('🤖 Traitement avec OpenAI');
                 
-                $io->note(sprintf('Contenu total : %d lignes', $totalLines));
-                
-                if ($totalLines > 50) {
-                    $io->warning('Le contenu est volumineux. Utilise -v pour voir tout le contenu ou redirige vers un fichier.');
-                    $io->text('Exemple : php bin/console app:fetch-rss > flux_rss.xml');
+                try {
+                    $info = $this->rssSummarizer->processFeeds($results);
                     
-                    // Affichage des 50 premières lignes
-                    $io->text('Aperçu (50 premières lignes) :');
-                    $output->writeln(implode("\n", array_slice($lines, 0, 50)));
-                    $io->text('...');
-                } else {
-                    $output->writeln($mergedContent);
+                    if ($info) {
+                        $io->success('✅ Information créée avec succès !');
+                        $io->definitionList(
+                            ['ID' => $info->getId()],
+                            ['Description' => $info->getDescription()],
+                            ['URL' => $info->getUrl() ?: 'Non définie'],
+                            ['Image' => $info->getImageUrl() ?: 'Non définie'],
+                            ['Publié le' => $info->getPublishedAt() ? $info->getPublishedAt()->format('d/m/Y H:i') : 'Non défini'],
+                            ['Créé le' => $info->getCreatedAt()->format('d/m/Y H:i')]
+                        );
+                    } else {
+                        $io->error('❌ Impossible de créer une information à partir des flux.');
+                        return Command::FAILURE;
+                    }
+                    
+                } catch (\Exception $e) {
+                    $io->error('❌ Erreur lors du traitement OpenAI : ' . $e->getMessage());
+                    return Command::FAILURE;
                 }
+                
+            } else {
+                // Mode normal : affichage brut
+                $io->section('📄 Contenu des flux RSS (brut)');
+                
+                $mergedContent = $this->rssFetcher->mergeFeeds($results);
+                
+                if ($output->isVerbose()) {
+                    // Mode verbose : affichage complet
+                    $output->writeln($mergedContent);
+                } else {
+                    // Mode normal : affichage avec pagination
+                    $lines = explode("\n", $mergedContent);
+                    $totalLines = count($lines);
+                    
+                    $io->note(sprintf('Contenu total : %d lignes', $totalLines));
+                    
+                    if ($totalLines > 50) {
+                        $io->warning('Le contenu est volumineux. Utilise -v pour voir tout le contenu ou redirige vers un fichier.');
+                        $io->text('Exemple : php bin/console app:fetch-rss > flux_rss.xml');
+                        
+                        // Affichage des 50 premières lignes
+                        $io->text('Aperçu (50 premières lignes) :');
+                        $output->writeln(implode("\n", array_slice($lines, 0, 50)));
+                        $io->text('...');
+                    } else {
+                        $output->writeln($mergedContent);
+                    }
+                }
+                
+                $io->success(sprintf('✅ %d flux RSS récupérés avec succès !', $successCount));
             }
-            
-            $io->success(sprintf('✅ %d flux RSS récupérés avec succès !', $successCount));
         } else {
             $io->error('Aucun flux RSS n\'a pu être récupéré.');
             return Command::FAILURE;
