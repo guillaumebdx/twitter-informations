@@ -28,4 +28,23 @@ class FluxRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Find random Flux entities
+     * 
+     * @param int $limit Number of random flux to return
+     * @return Flux[] Returns an array of random Flux objects
+     */
+    public function findRandom(int $limit = 2): array
+    {
+        $allFlux = $this->findAll();
+        
+        if (count($allFlux) <= $limit) {
+            return $allFlux;
+        }
+        
+        // Shuffle and return limited results
+        shuffle($allFlux);
+        return array_slice($allFlux, 0, $limit);
+    }
 }

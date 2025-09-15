@@ -39,10 +39,16 @@ class FetchRssCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $io->title('🔄 Récupération des flux RSS');
-
-        // Récupération de tous les flux
-        $io->section('Récupération des flux...');
-        $results = $this->rssFetcher->fetchAllFeeds();
+        $io->section('🔄 Récupération des flux RSS');
+        $useLlm = $input->getOption('llm');
+        
+        if ($useLlm) {
+            $io->text('Récupération de 2 flux aléatoires pour traitement LLM...');
+            $results = $this->rssFetcher->fetchRandomFeeds(2);
+        } else {
+            $io->text('Récupération de tous les flux...');
+            $results = $this->rssFetcher->fetchAllFeeds();
+        }
 
         $successCount = count($results['success']);
         $errorCount = count($results['errors']);

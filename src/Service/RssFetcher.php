@@ -25,6 +25,29 @@ class RssFetcher
     public function fetchAllFeeds(): array
     {
         $fluxes = $this->fluxRepository->findAllOrderedByCreatedAt();
+        return $this->fetchFeeds($fluxes);
+    }
+
+    /**
+     * Fetch random RSS feeds and return merged content
+     * 
+     * @param int $limit Number of random feeds to fetch
+     * @return array Array with 'success' feeds and 'errors'
+     */
+    public function fetchRandomFeeds(int $limit = 2): array
+    {
+        $fluxes = $this->fluxRepository->findRandom($limit);
+        return $this->fetchFeeds($fluxes);
+    }
+
+    /**
+     * Fetch specified RSS feeds and return merged content
+     * 
+     * @param array $fluxes Array of Flux entities to fetch
+     * @return array Array with 'success' feeds and 'errors'
+     */
+    private function fetchFeeds(array $fluxes): array
+    {
         $results = [
             'success' => [],
             'errors' => []

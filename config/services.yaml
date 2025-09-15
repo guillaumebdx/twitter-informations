@@ -23,3 +23,7 @@ services:
     App\Service\LLM\RssSummarizer:
         arguments:
             $openaiApiKey: '%env(OPENAI_API_KEY)%'
+    
+    App\Service\TwitterClient:
+        arguments:
+            $twitterBearerToken: '%env(TWITTER_BEARER_TOKEN)%'

@@ -392,7 +392,7 @@ class RssSummarizer
                     'messages' => [
                         [
                             'role' => 'system',
-                            'content' => 'Tu es un éditeur créatif et original. Tu dois VARIER tes styles et emojis. Ne copie JAMAIS les patterns des exemples précédents. Sois créatif et original dans tes formulations. Utilise différents emojis d\'alerte : 🚨, ⚡, 🔥, 💡, ⭐, 🎯, 💥, 🌟, ⚠️, 📢, 🔔, 💫. Varie les mots d\'accroche : ALERTE, BREAKING, SCOOP, FLASH, URGENT, BOOM, RÉVÉLATION, etc.'
+                            'content' => 'Tu es un éditeur créatif et original. Tu dois TOUJOURS rédiger en FRANÇAIS. Tu dois VARIER tes styles et emojis. Ne copie JAMAIS les patterns des exemples précédents. Sois créatif et original dans tes formulations. Utilise différents emojis d\'alerte : 🚨, ⚡, 🔥, 💡, ⭐, 🎯, 💥, 🌟, ⚠️, 📢, 🔔, 💫. Varie les mots d\'accroche : ALERTE, BREAKING, SCOOP, FLASH, URGENT, BOOM, RÉVÉLATION, etc. IMPORTANT: Réponds EXCLUSIVEMENT en français, même si les sources sont en anglais.'
                         ],
                         [
                             'role' => 'user',
