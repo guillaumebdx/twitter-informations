@@ -6,6 +6,7 @@ use App\Service\TwitterClient;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -19,6 +20,11 @@ class TwitterDebugCommand extends Command
         private TwitterClient $twitterClient
     ) {
         parent::__construct();
+    }
+
+    protected function configure(): void
+    {
+        $this->addOption('tweet', null, InputOption::VALUE_NONE, 'Post a test tweet "bonjour"');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -63,6 +69,29 @@ class TwitterDebugCommand extends Command
                 $io->note('Test effectué en récupérant les informations du compte @twitter');
             } else {
                 $io->warning('Aucune donnée trouvée dans testResult[\'data\']');
+            }
+
+            // Vérifier si l'option --tweet est activée
+            if ($input->getOption('tweet')) {
+                $io->section('🐦 Publication d\'un tweet de test');
+                $io->text('Publication du tweet "bonjour"...');
+                
+                $tweetResult = $this->twitterClient->postTweet('bonjour');
+                
+                $io->success('✅ Tweet publié avec succès !');
+                
+                if (isset($tweetResult['data'])) {
+                    $tweet = $tweetResult['data'];
+                    $tweetTable = [
+                        ['ID du tweet', $tweet['id'] ?? 'N/A'],
+                        ['Texte', $tweet['text'] ?? 'N/A'],
+                    ];
+                    
+                    $io->table(['Propriété', 'Valeur'], $tweetTable);
+                }
+                
+                $io->text('Debug de la réponse tweet:');
+                $io->text(json_encode($tweetResult, JSON_PRETTY_PRINT));
             }
 
             $io->success('🎉 Debug Twitter API v2 terminé avec succès !');

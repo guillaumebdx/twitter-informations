@@ -11,7 +11,11 @@ class TwitterClient
 
     public function __construct(
         private HttpClientInterface $httpClient,
-        private string $twitterBearerToken
+        private string $twitterBearerToken,
+        private string $twitterApiKey,
+        private string $twitterApiSecret,
+        private string $twitterAccessToken,
+        private string $twitterAccessTokenSecret
     ) {
     }
 
@@ -72,6 +76,83 @@ class TwitterClient
             ]);
 
             if ($response->getStatusCode() !== 200) {
+                throw new \Exception(
+                    sprintf(
+                        'Twitter API v2 error (HTTP %d): %s',
+                        $response->getStatusCode(),
+                        $response->getContent(false)
+                    )
+                );
+            }
+
+            return $response->toArray();
+
+        } catch (TransportExceptionInterface $e) {
+            throw new \Exception('Erreur de transport Twitter API v2: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Generate OAuth 1.0a signature for Twitter API v2
+     */
+    private function generateOAuth1Signature(string $method, string $url, array $params): string
+    {
+        $baseString = $method . '&' . rawurlencode($url) . '&' . rawurlencode(http_build_query($params, '', '&', PHP_QUERY_RFC3986));
+        $signingKey = rawurlencode($this->twitterApiSecret) . '&' . rawurlencode($this->twitterAccessTokenSecret);
+        return base64_encode(hash_hmac('sha1', $baseString, $signingKey, true));
+    }
+
+    /**
+     * Generate OAuth 1.0a authorization header for Twitter API v2
+     */
+    private function generateOAuth1Header(string $method, string $url, array $additionalParams = []): string
+    {
+        $oauthParams = [
+            'oauth_consumer_key' => $this->twitterApiKey,
+            'oauth_nonce' => bin2hex(random_bytes(16)),
+            'oauth_signature_method' => 'HMAC-SHA1',
+            'oauth_timestamp' => time(),
+            'oauth_token' => $this->twitterAccessToken,
+            'oauth_version' => '1.0'
+        ];
+
+        $allParams = array_merge($oauthParams, $additionalParams);
+        ksort($allParams);
+
+        $oauthParams['oauth_signature'] = $this->generateOAuth1Signature($method, $url, $allParams);
+
+        $headerParts = [];
+        foreach ($oauthParams as $key => $value) {
+            $headerParts[] = rawurlencode($key) . '="' . rawurlencode($value) . '"';
+        }
+
+        return 'OAuth ' . implode(', ', $headerParts);
+    }
+
+    /**
+     * Post a tweet using OAuth 1.0a User Context
+     * 
+     * @param string $text Tweet text content
+     * @return array API response data
+     * @throws \Exception If API call fails
+     */
+    public function postTweet(string $text): array
+    {
+        try {
+            $url = self::API_BASE_URL . '/tweets';
+            $authHeader = $this->generateOAuth1Header('POST', $url);
+
+            $response = $this->httpClient->request('POST', $url, [
+                'headers' => [
+                    'Authorization' => $authHeader,
+                    'Content-Type' => 'application/json',
+                ],
+                'json' => [
+                    'text' => $text
+                ]
+            ]);
+
+            if ($response->getStatusCode() !== 201) {
                 throw new \Exception(
                     sprintf(
                         'Twitter API v2 error (HTTP %d): %s',

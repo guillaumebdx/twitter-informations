@@ -27,3 +27,7 @@ services:
     App\Service\TwitterClient:
         arguments:
             $twitterBearerToken: '%env(TWITTER_BEARER_TOKEN)%'
+            $twitterApiKey: '%env(TWITTER_API_KEY)%'
+            $twitterApiSecret: '%env(TWITTER_API_SECRET)%'
+            $twitterAccessToken: '%env(TWITTER_ACCESS_TOKEN)%'
+            $twitterAccessTokenSecret: '%env(TWITTER_ACCESS_TOKEN_SECRET)%'
