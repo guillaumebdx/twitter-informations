@@ -1,0 +1,130 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Détails du log d'exécution #{{ execution_log.id }}{% endblock %}
+
+{% block body %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-clock-history me-2"></i>Log d'exécution #{{ execution_log.id }}</h1>
+    <a href="{{ path('app_execution_log_index') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Retour à la liste
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Informations générales
+                </h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">Date d'exécution :</dt>
+                    <dd class="col-sm-8">
+                        <i class="bi bi-calendar3 me-1"></i>
+                        {{ execution_log.executedAt|date('d/m/Y H:i:s') }}
+                    </dd>
+
+                    <dt class="col-sm-4">Statut :</dt>
+                    <dd class="col-sm-8">
+                        {% if execution_log.status == 'success' %}
+                            <span class="badge bg-success fs-6">
+                                <i class="bi bi-check-circle me-1"></i>Succès
+                            </span>
+                        {% else %}
+                            <span class="badge bg-danger fs-6">
+                                <i class="bi bi-x-circle me-1"></i>Échec
+                            </span>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-4">Info liée :</dt>
+                    <dd class="col-sm-8">
+                        {% if execution_log.info %}
+                            <a href="{{ path('app_info_show', {'id': execution_log.info.id}) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-link-45deg me-1"></i>Voir Info #{{ execution_log.info.id }}
+                            </a>
+                        {% else %}
+                            <span class="text-muted">Aucune info créée</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        {% if execution_log.errorOutput %}
+        <div class="card mt-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Message d'erreur
+                </h5>
+            </div>
+            <div class="card-body">
+                <pre class="bg-light p-3 rounded"><code>{{ execution_log.errorOutput }}</code></pre>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        {% if execution_log.info %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-info-square me-2"></i>Aperçu de l'info
+                </h5>
+            </div>
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Description :</h6>
+                <p class="card-text">{{ execution_log.info.description|slice(0, 200) }}{% if execution_log.info.description|length > 200 %}...{% endif %}</p>
+                
+                {% if execution_log.info.url %}
+                <h6 class="card-subtitle mb-2 text-muted">URL :</h6>
+                <p class="card-text">
+                    <a href="{{ execution_log.info.url }}" target="_blank" class="text-break">
+                        {{ execution_log.info.url|slice(0, 50) }}{% if execution_log.info.url|length > 50 %}...{% endif %}
+                        <i class="bi bi-box-arrow-up-right ms-1"></i>
+                    </a>
+                </p>
+                {% endif %}
+
+                {% if execution_log.info.publishedAt %}
+                <h6 class="card-subtitle mb-2 text-muted">Publié le :</h6>
+                <p class="card-text">
+                    <i class="bi bi-calendar-check me-1"></i>
+                    {{ execution_log.info.publishedAt|date('d/m/Y H:i:s') }}
+                </p>
+                {% endif %}
+
+                <div class="mt-3">
+                    <a href="{{ path('app_info_show', {'id': execution_log.info.id}) }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-eye me-1"></i>Voir les détails complets
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-gear me-2"></i>Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{{ path('app_execution_log_index') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-list me-1"></i>Tous les logs
+                    </a>
+                    {% if execution_log.info %}
+                    <a href="{{ path('app_info_show', {'id': execution_log.info.id}) }}" class="btn btn-outline-primary">
+                        <i class="bi bi-info-circle me-1"></i>Voir l'info
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

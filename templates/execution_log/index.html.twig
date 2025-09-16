@@ -1,0 +1,121 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Logs d'exécution{% endblock %}
+
+{% block body %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-clock-history me-2"></i>Logs d'exécution</h1>
+    <div class="text-muted">
+        <small>{{ totalItems }} entrée(s) au total</small>
+    </div>
+</div>
+
+{% if logs is empty %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        Aucun log d'exécution trouvé. Les logs apparaîtront après la première exécution de la commande <code>app:publish-tweet</code>.
+    </div>
+{% else %}
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Date d'exécution</th>
+                            <th>Statut</th>
+                            <th>Info liée</th>
+                            <th>Erreur</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td>
+                                <i class="bi bi-calendar3 me-1"></i>
+                                {{ log.executedAt|date('d/m/Y H:i:s') }}
+                            </td>
+                            <td>
+                                {% if log.status == 'success' %}
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-check-circle me-1"></i>Succès
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-danger">
+                                        <i class="bi bi-x-circle me-1"></i>Échec
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if log.info %}
+                                    <a href="{{ path('app_info_show', {'id': log.info.id}) }}" class="text-decoration-none">
+                                        <i class="bi bi-link-45deg me-1"></i>Info #{{ log.info.id }}
+                                    </a>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if log.errorOutput %}
+                                    <span class="text-danger" title="{{ log.errorOutput }}">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        {{ log.errorOutput|length > 50 ? log.errorOutput|slice(0, 50) ~ '...' : log.errorOutput }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ path('app_execution_log_show', {'id': log.id}) }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye me-1"></i>Détails
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if totalPages > 1 %}
+    <nav aria-label="Navigation des logs" class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if currentPage > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ path('app_execution_log_index', {'page': currentPage - 1}) }}">
+                        <i class="bi bi-chevron-left"></i> Précédent
+                    </a>
+                </li>
+            {% endif %}
+
+            {% for page in 1..totalPages %}
+                {% if page == currentPage %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page }}</span>
+                    </li>
+                {% elseif page == 1 or page == totalPages or (page >= currentPage - 2 and page <= currentPage + 2) %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ path('app_execution_log_index', {'page': page}) }}">{{ page }}</a>
+                    </li>
+                {% elseif page == currentPage - 3 or page == currentPage + 3 %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                {% endif %}
+            {% endfor %}
+
+            {% if currentPage < totalPages %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ path('app_execution_log_index', {'page': currentPage + 1}) }}">
+                        Suivant <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+{% endif %}
+{% endblock %}
