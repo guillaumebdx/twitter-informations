@@ -1,1 +1,1 @@
-0 8-23 * * * cd /var/www/html && php bin/console app:publish-tweet >> /var/www/html/var/log/cron.log 2>&1
+0 8-23 * * * cd /var/www/html && /usr/local/bin/php bin/console app:publish-tweet >> /var/www/html/var/log/cron.log 2>&1
