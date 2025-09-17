@@ -334,7 +334,7 @@ class RssSummarizer
             "- VARIE TOUJOURS tes emojis et mots d'accroche\n" .
             "- N'utilise JAMAIS le même pattern que les infos déjà publiées\n" .
             "- Sois ORIGINAL et créatif dans tes formulations\n" .
-            "- Évite de répéter les mêmes structures ou styles\n\n" .
+            "- Évite ABSOLUMENT de répéter les mêmes structures ou styles\n\n" .
             "📋 INSTRUCTIONS :\n" .
             "- Sélectionne UNE SEULE information parmi tous les flux fournis\n" .
             "- Choisis l'info la plus récente, intéressante et susceptible de générer de l'engagement\n" .
