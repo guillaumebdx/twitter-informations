@@ -29,7 +29,8 @@ class TwitterClient
     {
         try {
             // Use users/by/username endpoint which supports Application-Only auth
-            $response = $this->httpClient->request('GET', self::API_BASE_URL . '/users/by/username/twitter', [
+            // Utiliser le compte officiel des développeurs Twitter pour le test
+            $response = $this->httpClient->request('GET', self::API_BASE_URL . '/users/by/username/XDevelopers', [
                 'headers' => [
                     'Authorization' => 'Bearer ' . $this->twitterBearerToken,
                     'Content-Type' => 'application/json',
