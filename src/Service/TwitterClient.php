@@ -168,4 +168,79 @@ class TwitterClient
             throw new \Exception('Erreur de transport Twitter API v2: ' . $e->getMessage());
         }
     }
+
+    /**
+     * Récupère les informations de rate limits de l'API Twitter (Bearer Token)
+     * 
+     * @return array Rate limits par endpoint
+     * @throws \Exception Si l'appel API échoue
+     */
+    public function getRateLimits(): array
+    {
+        try {
+            // Utiliser l'endpoint application/rate_limit_status qui supporte Bearer Token
+            $response = $this->httpClient->request('GET', 'https://api.twitter.com/1.1/application/rate_limit_status.json', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $this->twitterBearerToken,
+                    'Content-Type' => 'application/json',
+                ],
+                'query' => [
+                    'resources' => 'tweets,users,search,statuses'
+                ]
+            ]);
+
+            if ($response->getStatusCode() !== 200) {
+                throw new \Exception(
+                    sprintf(
+                        'Twitter Rate Limit API error (HTTP %d): %s',
+                        $response->getStatusCode(),
+                        $response->getContent(false)
+                    )
+                );
+            }
+
+            $data = $response->toArray();
+            
+            // Extraire et formater les rate limits les plus importants
+            $rateLimits = [];
+            
+            // Rate limits pour les tweets (v2)
+            if (isset($data['resources']['tweets'])) {
+                foreach ($data['resources']['tweets'] as $endpoint => $limits) {
+                    $cleanEndpoint = str_replace('/2/tweets', 'tweets', $endpoint);
+                    $rateLimits[$cleanEndpoint] = $limits;
+                }
+            }
+
+            // Rate limits pour les utilisateurs
+            if (isset($data['resources']['users'])) {
+                foreach ($data['resources']['users'] as $endpoint => $limits) {
+                    $cleanEndpoint = str_replace('/1.1/users/', 'users/', $endpoint);
+                    $rateLimits[$cleanEndpoint] = $limits;
+                }
+            }
+
+            // Rate limits pour la recherche
+            if (isset($data['resources']['search'])) {
+                foreach ($data['resources']['search'] as $endpoint => $limits) {
+                    $cleanEndpoint = str_replace('/1.1/search/', 'search/', $endpoint);
+                    $rateLimits[$cleanEndpoint] = $limits;
+                }
+            }
+
+            // Rate limits pour les statuts (v1.1)
+            if (isset($data['resources']['statuses'])) {
+                foreach ($data['resources']['statuses'] as $endpoint => $limits) {
+                    $cleanEndpoint = str_replace('/1.1/statuses/', 'statuses/', $endpoint);
+                    $rateLimits[$cleanEndpoint] = $limits;
+                }
+            }
+
+            return $rateLimits;
+
+        } catch (TransportExceptionInterface $e) {
+            throw new \Exception('Erreur de transport lors de la récupération des rate limits : ' . $e->getMessage());
+        }
+    }
+
 }
