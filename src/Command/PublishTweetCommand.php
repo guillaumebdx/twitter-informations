@@ -10,6 +10,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -28,6 +29,24 @@ class PublishTweetCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addOption(
+            'feeds',
+            'f',
+            InputOption::VALUE_OPTIONAL,
+            'Nombre de flux RSS à traiter (1 ou 2, défaut: 2)',
+            2
+        );
+
+        $this->addOption(
+            'dry-run',
+            'd',
+            InputOption::VALUE_NONE,
+            'Mode test: exécute tout le processus (validation et upload image) sans publier le tweet'
+        );
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
@@ -41,9 +60,16 @@ class PublishTweetCommand extends Command
         try {
             // Étape 1: Récupération des flux RSS
             $io->section('📡 Récupération des flux RSS');
-            $io->text('Récupération de 2 flux aléatoires pour traitement LLM...');
+            $feedsCount = (int) $input->getOption('feeds');
             
-            $results = $this->rssFetcher->fetchRandomFeeds(2);
+            // Valider le nombre de flux
+            if ($feedsCount < 1 || $feedsCount > 2) {
+                $feedsCount = 2;
+            }
+            
+            $io->text("Récupération de {$feedsCount} flux aléatoire(s) pour traitement LLM...");
+            
+            $results = $this->rssFetcher->fetchRandomFeeds($feedsCount);
             $successCount = count($results['success']);
             
             if ($successCount === 0) {
@@ -59,35 +85,95 @@ class PublishTweetCommand extends Command
             $info = $this->rssSummarizer->processFeeds($results);
             
             if (!$info) {
-                $io->error('❌ Impossible de créer une information à partir des flux.');
-                $executionLog->setStatus('fail');
-                $executionLog->setErrorOutput('Impossible de créer une information à partir des flux RSS');
+                $io->warning('⚠️ Aucune information nouvelle trouvée dans les flux RSS.');
+                $io->text('Le LLM a déterminé que toutes les informations sont des doublons ou non pertinentes.');
+                $executionLog->setStatus('success');
+                $executionLog->setErrorOutput('Aucune info nouvelle - tous les articles sont des doublons ou non pertinents');
                 $this->entityManager->persist($executionLog);
                 $this->entityManager->flush();
-                return Command::FAILURE;
+                return Command::SUCCESS;
             }
             
             $io->success('✅ Information générée avec succès !');
             $io->definitionList(
                 ['Description' => substr($info->getDescription(), 0, 100) . '...'],
-                ['URL' => $info->getUrl() ?: 'Non définie'],
-                ['Image' => $info->getImageUrl() ?: 'Non définie']
+                ['URL' => $info->getUrl() ?: 'Non définie']
             );
 
             // Étape 3: Publication du tweet
             $io->section('🐦 Publication du tweet');
-            $io->text('Publication du tweet avec la description générée...');
-            
+            $io->text('Préparation du contenu du tweet...');
+
             $tweetText = $info->getDescription();
             
-            // Vérifier la longueur du tweet (limite Twitter: 280 caractères)
-            if (strlen($tweetText) > 280) {
-                $tweetText = substr($tweetText, 0, 277) . '...';
-                $io->note('Tweet tronqué à 280 caractères.');
+            // Ajouter l'URL à la fin du tweet si elle existe
+            if ($info->getUrl()) {
+                $tweetText .= ' ' . $info->getUrl();
+            }
+
+            // Calculer la longueur réelle du tweet (Twitter raccourcit les URLs en t.co = 23 chars)
+            $realTweetLength = strlen($tweetText);
+            if ($info->getUrl()) {
+                // Soustraire la longueur de l'URL originale et ajouter 23 chars pour t.co + 1 espace
+                $realTweetLength = $realTweetLength - strlen($info->getUrl()) + 24;
             }
             
+            // Vérifier la longueur réelle du tweet (limite Twitter: 280 caractères)
+            if ($realTweetLength > 280) {
+                $maxDescLength = 280 - 24; // 24 = 23 (t.co) + 1 (espace)
+                if ($info->getUrl()) {
+                    $description = $info->getDescription();
+                    $tweetText = substr($description, 0, $maxDescLength - 3) . '... ' . $info->getUrl();
+                } else {
+                    $tweetText = substr($tweetText, 0, 277) . '...';
+                }
+                $io->note('Tweet tronqué pour respecter la limite de 280 caractères (URLs comptent comme 23 chars).');
+            }
+            
+            // Afficher le contenu du tweet qui sera publié
+            $io->section('📝 Contenu du tweet');
+            $io->text('Voici le tweet qui sera publié :');
+            $io->newLine();
+            $io->text('┌─────────────────────────────────────────────────────────────────────────────────┐');
+            
+            // Découper le tweet en lignes de 77 caractères max pour l'affichage
+            $lines = str_split($tweetText, 77);
+            foreach ($lines as $line) {
+                $io->text('│ ' . str_pad($line, 77) . ' │');
+            }
+            
+            $io->text('└─────────────────────────────────────────────────────────────────────────────────┘');
+            $io->newLine();
+            
+            // Afficher la longueur réelle (avec t.co)
+            $displayLength = strlen($tweetText);
+            if ($info->getUrl()) {
+                $realLength = $displayLength - strlen($info->getUrl()) + 23;
+                $io->text('Longueur affichée: ' . $displayLength . ' caractères');
+                $io->text('Longueur réelle sur Twitter: ' . $realLength . '/280 caractères (URL → t.co = 23 chars)');
+            } else {
+                $io->text('Longueur: ' . $displayLength . '/280 caractères');
+            }
+
+            $dryRun = (bool) $input->getOption('dry-run');
+            if ($dryRun) {
+                $io->warning('Mode DRY-RUN activé: aucun appel à l\'API Twitter ne sera effectué.');
+                // Sauvegarder le log d'exécution comme succès mais sans publication
+                $executionLog->setStatus('success');
+                $executionLog->setInfo($info);
+                $executionLog->setErrorOutput('DRY-RUN: tweet non publié (aucun appel API Twitter).');
+                $this->entityManager->persist($executionLog);
+                $this->entityManager->flush();
+                $io->success('✅ DRY-RUN terminé: aucun tweet publié.');
+                return Command::SUCCESS;
+            }
+
+            // Publication texte seul
             $tweetResult = $this->twitterClient->postTweet($tweetText);
             
+            if (!$tweetResult) {
+                throw new \RuntimeException('La publication du tweet a échoué sans réponse.');
+            }
             $io->success('✅ Tweet publié avec succès !');
             
             if (isset($tweetResult['data'])) {

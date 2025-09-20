@@ -37,17 +37,28 @@ class RssSummarizer
             return null;
         }
 
+        // Log content size for debugging
+        $contentSize = strlen($feedContent);
+        error_log("RssSummarizer: Taille du contenu préparé: {$contentSize} caractères");
+
         try {
             // Call OpenAI API
             $response = $this->callOpenAI($feedContent);
+            
+            // Gérer le cas où OpenAI retourne null (aucune info nouvelle)
             if (!$response) {
-                throw new \Exception("Échec de l'appel à OpenAI");
+                error_log("RssSummarizer: Aucune info nouvelle trouvée par le LLM");
+                return null;
             }
 
-            // Check for duplicates before creating the Info (only URL check now, content similarity handled by LLM)
-            if ($this->isDuplicate($response)) {
-                throw new \Exception("Cette information a déjà été traitée récemment (URL identique détectée)");
+            // Log de l'URL fournie par le LLM (on fait confiance au LLM pour extraire du XML)
+            if (isset($response['url']) && !empty($response['url'])) {
+                error_log('RssSummarizer: URL extraite par le LLM du XML RSS: ' . $response['url']);
+            } else {
+                error_log('RssSummarizer: Aucune URL fournie par le LLM');
             }
+
+            // Vérification de doublon supprimée - on laisse le LLM et les flux RSS gérer la nouveauté
 
             // Create and persist Info entity
             $info = $this->createInfoFromResponse($response);
@@ -72,293 +83,76 @@ class RssSummarizer
     {
         $content = "Voici plusieurs flux RSS récupérés. Analyse-les et sélectionne l'information la plus intéressante:\n\n";
         
-        // Add latest 10 infos to avoid duplicates
-        $latestInfos = $this->infoRepository->findLatest(10);
-        if (!empty($latestInfos)) {
-            $content .= "=== INFOS DÉJÀ PUBLIÉES (À ÉVITER) ===\n";
-            $content .= "ATTENTION: Ne sélectionne PAS d'info similaire ou identique à celles-ci:\n\n";
-            
-            foreach ($latestInfos as $index => $info) {
-                $content .= "Info " . ($index + 1) . ":\n";
-                $content .= "- Description: " . $info->getDescription() . "\n";
-                $content .= "- URL: " . $info->getUrl() . "\n";
-                $content .= "- Date: " . $info->getCreatedAt()->format('Y-m-d H:i') . "\n\n";
-            }
-            
-            $content .= "=== FIN DES INFOS À ÉVITER ===\n\n";
-        }
+        // Suppression complète de la vérification des doublons
         
         $content .= "=== NOUVEAUX FLUX RSS À ANALYSER ===\n\n";
-        
+        $content .= "IMPORTANT: Choisissez une URL parmi celles-ci pour éviter les hallucinations d'URL:\n\n";
+
         foreach ($successFeeds as $index => $feedData) {
             $flux = $feedData['flux'];
             $xmlContent = $feedData['content'];
             
-            // Parser le flux RSS et extraire seulement les derniers articles
-            $parsedItems = $this->parseRssAndGetLatestItems($xmlContent, 3); // Max 3 items par flux
+            $fluxName = $this->sanitizeUtf8((string) $flux->getName());
+            $fluxUrl = $this->sanitizeUtf8((string) $flux->getUrl());
+            $content .= "=== FLUX " . ($index + 1) . ": {$fluxName} ===\n";
+            $content .= "Source: {$fluxUrl}\n";
+            $content .= "Contenu RSS brut (extrait les infos et URLs toi-même):\n";
+            $content .= "```xml\n";
             
-            $content .= "=== FLUX " . ($index + 1) . ": {$flux->getName()} ===\n";
-            $content .= "Source: {$flux->getUrl()}\n";
-            $content .= "Derniers articles:\n";
-            
-            foreach ($parsedItems as $itemIndex => $item) {
-                $content .= "Article " . ($itemIndex + 1) . ":\n";
-                $content .= "- Titre: " . ($item['title'] ?? 'Non défini') . "\n";
-                $content .= "- Description: " . ($item['description'] ?? 'Non définie') . "\n";
-                $content .= "- Lien: " . ($item['link'] ?? 'Non défini') . "\n";
-                $content .= "- Date: " . ($item['pubDate'] ?? 'Non définie') . "\n";
-                if (!empty($item['imageUrl'])) {
-                    $content .= "- Image: " . $item['imageUrl'] . "\n";
-                }
-                $content .= "\n";
+            // Donner le XML brut mais limité pour éviter la surcharge
+            $cleanXml = $this->sanitizeUtf8($xmlContent);
+            // Limiter la taille du XML pour éviter les erreurs de tokens
+            if (strlen($cleanXml) > 3000) {
+                $cleanXml = substr($cleanXml, 0, 3000) . "\n... [XML tronqué] ...";
             }
-            
-            $content .= "\n";
+            $content .= $cleanXml . "\n";
+            $content .= "```\n\n";
         }
+
+        $content .= "🔍 INSTRUCTIONS D'EXTRACTION :\n";
+        $content .= "- Cherche les balises <item> ou <entry> dans le XML\n";
+        $content .= "- Pour chaque article, trouve : <title>, <description> (ou <summary>), <link> (ou <url>)\n";
+        $content .= "- Utilise l'URL EXACTE trouvée dans le XML, ne l'invente pas\n\n";
 
         return $content;
     }
 
-    /**
-     * Parse RSS content and extract latest items - XML agnostic approach
-     */
-    private function parseRssAndGetLatestItems(string $xmlContent, int $maxItems = 3): array
-    {
-        try {
-            // Nettoyer le XML et supprimer les caractères problématiques
-            $xmlContent = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $xmlContent);
-            
-            $xml = new \SimpleXMLElement($xmlContent);
-            
-            // Approche agnostique : chercher tous les éléments qui ressemblent à des items
-            $allItems = $this->findItemsRecursively($xml);
-            
-            // Limiter au nombre max d'items et extraire le contenu de manière générique
-            $items = [];
-            $count = 0;
-            
-            foreach ($allItems as $item) {
-                if ($count >= $maxItems) break;
-                
-                $parsedItem = $this->extractItemContent($item);
-                if (!empty($parsedItem['title']) || !empty($parsedItem['description'])) {
-                    $items[] = $parsedItem;
-                    $count++;
-                }
-            }
-            
-            return $items;
-            
-        } catch (\Exception $e) {
-            // En cas d'erreur de parsing, retourner un contenu tronqué simple
-            $truncated = strlen($xmlContent) > 1000 ? substr($xmlContent, 0, 1000) . '...' : $xmlContent;
-            return [[
-                'title' => 'Contenu XML brut (parsing failed)',
-                'description' => $truncated,
-                'link' => '',
-                'pubDate' => ''
-            ]];
-        }
-    }
 
-    /**
-     * Find all potential item elements recursively in XML
-     */
-    private function findItemsRecursively(\SimpleXMLElement $xml): array
-    {
-        $items = [];
-        
-        // Noms d'éléments qui peuvent contenir des articles
-        $itemNames = ['item', 'entry'];
-        
-        foreach ($itemNames as $itemName) {
-            // Chercher directement
-            if (isset($xml->$itemName)) {
-                foreach ($xml->$itemName as $item) {
-                    $items[] = $item;
-                }
-            }
-            
-            // Chercher dans channel (RSS)
-            if (isset($xml->channel->$itemName)) {
-                foreach ($xml->channel->$itemName as $item) {
-                    $items[] = $item;
-                }
-            }
-            
-            // Chercher dans feed (Atom)
-            if (isset($xml->feed->$itemName)) {
-                foreach ($xml->feed->$itemName as $item) {
-                    $items[] = $item;
-                }
-            }
-        }
-        
-        // Si aucun item trouvé avec les noms standards, chercher récursivement
-        if (empty($items)) {
-            $items = $this->searchItemsInChildren($xml);
-        }
-        
-        return $items;
-    }
-
-    /**
-     * Search for items in all children recursively
-     */
-    private function searchItemsInChildren(\SimpleXMLElement $element): array
-    {
-        $items = [];
-        
-        foreach ($element->children() as $child) {
-            $childName = $child->getName();
-            
-            // Si l'élément a des enfants qui ressemblent à du contenu d'article
-            if ($this->looksLikeArticle($child)) {
-                $items[] = $child;
-            } else {
-                // Chercher récursivement
-                $items = array_merge($items, $this->searchItemsInChildren($child));
-            }
-        }
-        
-        return $items;
-    }
-
-    /**
-     * Check if an XML element looks like an article/item
-     */
-    private function looksLikeArticle(\SimpleXMLElement $element): bool
-    {
-        $children = $element->children();
-        $childNames = [];
-        
-        foreach ($children as $child) {
-            $childNames[] = strtolower($child->getName());
-        }
-        
-        // Un élément ressemble à un article s'il contient des champs typiques
-        $articleFields = ['title', 'description', 'summary', 'content', 'link', 'url', 'pubdate', 'published', 'updated', 'date'];
-        $matches = array_intersect($childNames, $articleFields);
-        
-        return count($matches) >= 2; // Au moins 2 champs typiques
-    }
-
-    /**
-     * Extract content from an item element generically
-     */
-    private function extractItemContent(\SimpleXMLElement $item): array
-    {
-        $parsedItem = [
-            'title' => '',
-            'description' => '',
-            'link' => '',
-            'pubDate' => ''
-        ];
-        
-        // Extraire le titre de manière générique
-        $titleFields = ['title'];
-        foreach ($titleFields as $field) {
-            if (isset($item->$field) && !empty((string)$item->$field)) {
-                $parsedItem['title'] = trim((string)$item->$field);
-                break;
-            }
-        }
-        
-        // Extraire la description de manière générique
-        $descriptionFields = ['description', 'summary', 'content'];
-        foreach ($descriptionFields as $field) {
-            if (isset($item->$field) && !empty((string)$item->$field)) {
-                $description = trim(strip_tags((string)$item->$field));
-                $parsedItem['description'] = strlen($description) > 300 ? 
-                    substr($description, 0, 300) . '...' : $description;
-                break;
-            }
-        }
-        
-        // Extraire le lien de manière générique
-        $linkFields = ['link', 'url', 'guid'];
-        foreach ($linkFields as $field) {
-            if (isset($item->$field)) {
-                if (is_object($item->$field) && isset($item->$field['href'])) {
-                    $parsedItem['link'] = (string)$item->$field['href'];
-                } elseif (!empty((string)$item->$field)) {
-                    $parsedItem['link'] = (string)$item->$field;
-                }
-                if (!empty($parsedItem['link'])) break;
-            }
-        }
-        
-        // Extraire la date de manière générique
-        $dateFields = ['pubDate', 'published', 'updated', 'date', 'lastBuildDate'];
-        foreach ($dateFields as $field) {
-            if (isset($item->$field) && !empty((string)$item->$field)) {
-                $parsedItem['pubDate'] = (string)$item->$field;
-                break;
-            }
-        }
-        
-        // Extraire l'image de manière générique
-        $parsedItem['imageUrl'] = '';
-        $imageFields = ['enclosure', 'media:content', 'media:thumbnail', 'image'];
-        foreach ($imageFields as $field) {
-            if (isset($item->$field)) {
-                if (is_object($item->$field)) {
-                    // Gérer les attributs comme enclosure[url] ou media:content[url]
-                    if (isset($item->$field['url'])) {
-                        $parsedItem['imageUrl'] = (string)$item->$field['url'];
-                    } elseif (isset($item->$field['href'])) {
-                        $parsedItem['imageUrl'] = (string)$item->$field['href'];
-                    }
-                } elseif (!empty((string)$item->$field)) {
-                    $parsedItem['imageUrl'] = (string)$item->$field;
-                }
-                if (!empty($parsedItem['imageUrl'])) break;
-            }
-        }
-        
-        return $parsedItem;
-    }
 
     /**
      * Call OpenAI API to analyze feeds
      */
     private function callOpenAI(string $content): ?array
     {
+        // Sanitize content before using in JSON payload
+        $content = $this->sanitizeUtf8($content);
         $prompt = $content . "\n\n" . 
-            "🎯 MISSION : Tu es un éditeur expert en veille informationnelle pour Twitter.\n\n" .
-            "🚫 RÈGLE ABSOLUE ANTI-DOUBLON :\n" .
-            "- Si tu vois des infos déjà publiées ci-dessus, tu dois les ÉVITER ABSOLUMENT\n" .
-            "- Ne sélectionne JAMAIS une info similaire ou sur le même sujet qu'une info déjà publiée\n" .
-            "- Si TOUTES les infos des flux RSS sont similaires aux infos déjà publiées, réponds avec null\n\n" .
-            "🎨 RÈGLE DE CRÉATIVITÉ ABSOLUE :\n" .
-            "- VARIE TOUJOURS tes emojis et mots d'accroche\n" .
-            "- N'utilise JAMAIS le même pattern que les infos déjà publiées\n" .
-            "- Sois ORIGINAL et créatif dans tes formulations\n" .
-            "- Évite ABSOLUMENT de répéter les mêmes structures ou styles\n\n" .
-            "📋 INSTRUCTIONS :\n" .
-            "- Sélectionne UNE SEULE information parmi tous les flux fournis\n" .
-            "- Choisis l'info la plus récente, intéressante et susceptible de générer de l'engagement\n" .
-            "- Reformule en style éditorial percutant avec des emojis variés\n" .
-            "- Limite la description à 240 caractères maximum (style Twitter)\n" .
-            "- Privilégie les scoops, nouveautés technologiques, et infos buzz\n" .
-            "- MAIS SURTOUT : évite tout doublon avec les infos déjà publiées\n\n" .
+            "🎯 MISSION : Tu es un expert en analyse de flux RSS et éditeur Twitter.\n\n" .
+            "📋 PROCESSUS SIMPLE :\n" .
+            "1. ANALYSE le XML RSS brut ci-dessus pour identifier les articles\n" .
+            "2. CHOISIS l'article le plus intéressant et récent\n" .
+            "3. EXTRAIS son titre, description ET son URL directement du XML\n" .
+            "4. REFORMULE le contenu en style éditorial percutant avec emojis\n" .
+            "5. UTILISE l'URL exacte que tu as trouvée dans le XML\n\n" .
+            "🚫 RÈGLES IMPORTANTES :\n" .
+            "- N'invente RIEN, utilise uniquement ce qui est dans le XML RSS\n" .
+            "- L'URL doit venir directement des balises <link>, <url> ou <guid> du XML\n" .
+            "- Choisis toujours l'info la plus récente et intéressante\n\n" .
             "🔄 FORMAT DE RÉPONSE (JSON uniquement) :\n" .
             "{\n" .
-            "  \"description\": \"Description reformulée avec style éditorial et emojis\",\n" .
-            "  \"url\": \"URL de l'article source\",\n" .
-            "  \"imageUrl\": \"URL de l'image si disponible (sinon null)\"\n" .
+            "  \"description\": \"🚨 URGENT : La France annonce de nouvelles mesures économiques ! 💰⚡\",\n" .
+            "  \"url\": \"https://www.rfi.fr/en/france/20250919-france-announces-new-economic-measures\"\n" .
             "}\n\n" .
-            "OU si aucune info nouvelle/différente :\n" .
-            "null\n\n" .
+            "⚠️ ATTENTION: L'URL ci-dessus est un EXEMPLE. Tu dois utiliser l'URL RÉELLE trouvée dans le XML RSS !\n\n" .
+            "OU si aucune info nouvelle/différente, réponds exactement :\n" .
+            "{\"skip\": true}\n\n" .
             "📝 RÈGLES IMPORTANTES :\n" .
             "- Réponds UNIQUEMENT en JSON, aucun autre texte\n" .
+            "- N'ajoute aucun commentaire ou explication\n" .
+            "- Assure-toi que le JSON est valide\n" .
+            "- RAPPEL: N'invente JAMAIS d'information, choisis parmi les articles RSS listés\n" .
             "- \"description\": Texte accrocheur de 240 caractères max avec emojis d'alerte\n" .
-            "- \"url\": URL exacte de l'article sélectionné\n" .
-            "- \"imageUrl\": URL de l'image si disponible dans N'IMPORTE QUEL flux (sinon null)\n\n" .
-            "🖼️ IMPORTANT POUR LES IMAGES :\n" .
-            "- Cherche les images dans TOUS les flux fournis\n" .
-            "- Si l'article sélectionné n'a pas d'image, mais qu'un autre article du même sujet en a une, utilise-la\n" .
-            "- Privilégie les images pertinentes et de qualité\n\n" .
+            "- \"url\": OBLIGATOIRE - Copie l'URL complète trouvée dans une balise <link> du XML\n\n" .
             "💡 EXEMPLES DE STYLES VARIÉS (change à chaque fois) :\n" .
             "Style 1: \"⚡ BREAKING : [Sujet] bouleverse le marché ! [Détail choc]\"\n" .
             "Style 2: \"💥 SCOOP EXCLUSIF : [Entreprise] révèle [Innovation surprenante]\"\n" .
@@ -372,7 +166,7 @@ class RssSummarizer
 
         // Vérifier la longueur du prompt pour éviter les erreurs de tokens
         $promptLength = strlen($prompt);
-        if ($promptLength > 12000) {
+        if ($promptLength > 15000) {
             throw new \Exception("Le contenu est trop volumineux pour OpenAI ({$promptLength} caractères). Réduisez le nombre de flux ou leur taille.");
         }
 
@@ -381,6 +175,9 @@ class RssSummarizer
             throw new \Exception('La clé API OpenAI (OPENAI_API_KEY) n\'est pas configurée.');
         }
 
+        error_log('OpenAI Request - Model: ' . ($_ENV['OPENAI_MODEL'] ?? 'gpt-3.5-turbo'));
+        error_log('OpenAI Request - Prompt length: ' . strlen($prompt) . ' chars');
+        
         try {
             $response = $this->httpClient->request('POST', 'https://api.openai.com/v1/chat/completions', [
                 'headers' => [
@@ -388,19 +185,19 @@ class RssSummarizer
                     'Content-Type' => 'application/json',
                 ],
                 'json' => [
-                    'model' => 'gpt-3.5-turbo',
+                    'model' => $_ENV['OPENAI_MODEL'] ?? 'gpt-3.5-turbo',
                     'messages' => [
                         [
                             'role' => 'system',
-                            'content' => 'Tu es un éditeur créatif et original. Tu dois TOUJOURS rédiger en FRANÇAIS. Tu dois VARIER tes styles et emojis. Ne copie JAMAIS les patterns des exemples précédents. Sois créatif et original dans tes formulations. Utilise différents emojis d\'alerte : 🚨, ⚡, 🔥, 💡, ⭐, 🎯, 💥, 🌟, ⚠️, 📢, 🔔, 💫. Varie les mots d\'accroche : ALERTE, BREAKING, SCOOP, FLASH, URGENT, BOOM, RÉVÉLATION, etc. IMPORTANT: Réponds EXCLUSIVEMENT en français, même si les sources sont en anglais.'
+                            'content' => $this->sanitizeUtf8('Tu es un éditeur créatif et original. Tu dois TOUJOURS rédiger en FRANÇAIS. Tu dois VARIER tes styles et emojis. Ne copie JAMAIS les patterns des exemples précédents. Sois créatif et original dans tes formulations. Utilise différents emojis d\'alerte : 🚨, ⚡, 🔥, 💡, ⭐, 🎯, 💥, 🌟, ⚠️, 📢, 🔔, 💫. Varie les mots d\'accroche : ALERTE, BREAKING, SCOOP, FLASH, URGENT, BOOM, RÉVÉLATION, etc. IMPORTANT: Réponds EXCLUSIVEMENT en français, même si les sources sont en anglais.')
                         ],
                         [
                             'role' => 'user',
-                            'content' => $prompt
+                            'content' => $this->sanitizeUtf8($prompt)
                         ]
                     ],
-                    'max_tokens' => 500,
-                    'temperature' => 0.9
+                    'max_tokens' => ($_ENV['OPENAI_MODEL'] === 'gpt-4o-mini') ? 500 : 300,
+                    'temperature' => ($_ENV['OPENAI_MODEL'] === 'gpt-4o-mini') ? 0.7 : 0.9
                 ],
                 'timeout' => 60,
             ]);
@@ -408,36 +205,101 @@ class RssSummarizer
             if ($response->getStatusCode() !== 200) {
                 $errorBody = '';
                 try {
-                    $errorData = $response->toArray(false);
-                    $errorBody = json_encode($errorData, JSON_PRETTY_PRINT);
-                } catch (\Exception $e) {
                     $errorBody = $response->getContent(false);
+                    error_log('OpenAI API Error - Status: ' . $response->getStatusCode());
+                    error_log('OpenAI API Error - Full Body: ' . $errorBody);
+                    
+                    // Essayer de parser le JSON d'erreur d'OpenAI
+                    $errorData = json_decode($errorBody, true);
+                    if ($errorData && isset($errorData['error'])) {
+                        error_log('OpenAI Error Type: ' . ($errorData['error']['type'] ?? 'unknown'));
+                        error_log('OpenAI Error Message: ' . ($errorData['error']['message'] ?? 'unknown'));
+                        error_log('OpenAI Error Code: ' . ($errorData['error']['code'] ?? 'unknown'));
+                    }
+                } catch (\Exception $e) {
+                    error_log('Could not parse OpenAI error response: ' . $e->getMessage());
                 }
                 
-                throw new \Exception(sprintf(
-                    'OpenAI API error %d: %s',
-                    $response->getStatusCode(),
-                    $errorBody
-                ));
+                // Créer un message d'erreur détaillé pour l'utilisateur
+                $userErrorMessage = 'Erreur API OpenAI (HTTP ' . $response->getStatusCode() . ')';
+                if ($errorData && isset($errorData['error']['message'])) {
+                    $userErrorMessage .= ': ' . $errorData['error']['message'];
+                    if (isset($errorData['error']['type'])) {
+                        $userErrorMessage .= ' (Type: ' . $errorData['error']['type'] . ')';
+                    }
+                } else {
+                    $userErrorMessage .= ': ' . $errorBody;
+                }
+                
+                throw new \Exception($userErrorMessage);
             }
 
             $data = $response->toArray();
             
             if (!isset($data['choices'][0]['message']['content'])) {
-                throw new \Exception('Réponse OpenAI invalide');
+                throw new \Exception('Réponse OpenAI invalide - Structure: ' . json_encode($data, JSON_PRETTY_PRINT));
             }
 
             $jsonResponse = trim($data['choices'][0]['message']['content']);
+            
+            // Suppression du debug
+            
+            if (empty($jsonResponse)) {
+                throw new \Exception('Réponse OpenAI vide - Le modèle n\'a retourné aucun contenu');
+            }
+            
             $decodedResponse = json_decode($jsonResponse, true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \Exception('Réponse JSON invalide de OpenAI: ' . json_last_error_msg());
+                throw new \Exception('Réponse JSON invalide de OpenAI: ' . json_last_error_msg() . ' | Contenu brut: "' . $jsonResponse . '"');
+            }
+
+            // Gérer le cas où le LLM indique qu'il faut skip (aucune info nouvelle)
+            if ($decodedResponse === null || (isset($decodedResponse['skip']) && $decodedResponse['skip'])) {
+                error_log('OpenAI a indiqué skip - aucune info nouvelle détectée par le modèle');
+                return null;
             }
 
             return $decodedResponse;
 
         } catch (TransportExceptionInterface $e) {
-            throw new \Exception('Erreur de transport OpenAI: ' . $e->getMessage());
+            error_log('OpenAI Transport Error: ' . $e->getMessage());
+            error_log('Model used: ' . ($_ENV['OPENAI_MODEL'] ?? 'gpt-3.5-turbo'));
+            
+            // Essayer de récupérer plus de détails sur l'erreur
+            if (method_exists($e, 'getResponse')) {
+                try {
+                    $response = $e->getResponse();
+                    if ($response) {
+                        $errorBody = $response->getContent(false);
+                        error_log('OpenAI Error Response Body: ' . $errorBody);
+                    }
+                } catch (\Exception $ex) {
+                    error_log('Could not get error response body: ' . $ex->getMessage());
+                }
+            }
+            
+            // Créer un message d'erreur détaillé avec les infos de la réponse si disponible
+            $detailedMessage = 'Erreur de transport OpenAI: ' . $e->getMessage();
+            if (method_exists($e, 'getResponse')) {
+                try {
+                    $response = $e->getResponse();
+                    if ($response) {
+                        $errorBody = $response->getContent(false);
+                        $errorData = json_decode($errorBody, true);
+                        if ($errorData && isset($errorData['error']['message'])) {
+                            $detailedMessage .= ' | Détail: ' . $errorData['error']['message'];
+                        }
+                    }
+                } catch (\Exception $ex) {
+                    // Ignore
+                }
+            }
+            throw new \Exception($detailedMessage);
+        } catch (\Exception $e) {
+            error_log('OpenAI General Error: ' . $e->getMessage());
+            error_log('Model used: ' . ($_ENV['OPENAI_MODEL'] ?? 'gpt-3.5-turbo'));
+            throw new \Exception('Erreur générale OpenAI: ' . $e->getMessage());
         }
     }
 
@@ -446,12 +308,49 @@ class RssSummarizer
      */
     private function isDuplicate(array $response): bool
     {
-        if (!isset($response['url'])) {
+        // Si l'info a une URL null, on publie quand même
+        if (!isset($response['url']) || $response['url'] === null || $response['url'] === '') {
             return false;
         }
 
-        // Check for exact URL match only
-        return $this->infoRepository->existsByUrl($response['url']);
+        // Vérification stricte : l'URL sélectionnée pour le tweet n'est pas déjà en DB
+        $isDuplicate = $this->infoRepository->existsByUrl($response['url']);
+        if ($isDuplicate) {
+            error_log('RssSummarizer: Doublon détecté pour URL: ' . $response['url']);
+        }
+        return $isDuplicate;
+    }
+
+    /**
+     * Map article ID to corresponding URL from RSS feeds
+     */
+    private function mapArticleIdToUrl(string $articleId, array $successFeeds): ?string
+    {
+        // Parse articleId format: FLUX1_ART2 -> flux index 1, article index 2
+        if (!preg_match('/^FLUX(\d+)_ART(\d+)$/', $articleId, $matches)) {
+            return null;
+        }
+
+        $fluxIndex = (int)$matches[1] - 1; // Convert to 0-based index
+        $articleIndex = (int)$matches[2] - 1; // Convert to 0-based index
+
+        if (!isset($successFeeds[$fluxIndex])) {
+            return null;
+        }
+
+        $feedData = $successFeeds[$fluxIndex];
+        $xmlContent = $feedData['content'];
+
+        try {
+            $items = $this->parseRssAndGetLatestItems($xmlContent, 2);
+            if (isset($items[$articleIndex]) && !empty($items[$articleIndex]['link'])) {
+                return $items[$articleIndex]['link'];
+            }
+        } catch (\Throwable $e) {
+            error_log('RssSummarizer: Erreur lors du mapping article ID: ' . $e->getMessage());
+        }
+
+        return null;
     }
 
     /**
@@ -459,20 +358,113 @@ class RssSummarizer
      */
     private function createInfoFromResponse(array $response): ?Info
     {
-        if (!isset($response['description']) || !isset($response['url'])) {
+        // Description is mandatory; URL is optional (avoid LLM-invented links)
+        if (!isset($response['description'])) {
             return null;
         }
 
         $info = new Info();
         $info->setDescription($response['description']);
-        $info->setUrl($response['url']);
-        
-        if (isset($response['imageUrl']) && !empty($response['imageUrl'])) {
-            $info->setImageUrl($response['imageUrl']);
+        // Sanitize and bound main URL to 255 chars
+        if (isset($response['url']) && !empty($response['url'])) {
+            $safeUrl = $this->sanitizeAndClampUrl((string)$response['url'], 255);
+            if ($safeUrl !== null) {
+                $info->setUrl($safeUrl);
+            }
         }
+        
 
         // publishedAt n'est plus utilisé - createdAt sera automatiquement défini par le lifecycle callback
 
         return $info;
+    }
+
+    /**
+     * Ensure URL is valid and <= maxLen. If too long, try removing query/fragment. Return null if still invalid/too long.
+     */
+    private function sanitizeAndClampUrl(string $url, int $maxLen = 255): ?string
+    {
+        $url = trim($this->sanitizeUtf8($url));
+        if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) {
+            return null;
+        }
+        if (strlen($url) <= $maxLen) {
+            return $url;
+        }
+        // Try to strip query and fragment to shorten
+        $parts = @parse_url($url);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return null;
+        }
+        $rebuilt = $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '') . ($parts['path'] ?? '');
+        if (strlen($rebuilt) <= $maxLen && filter_var($rebuilt, FILTER_VALIDATE_URL)) {
+            return $rebuilt;
+        }
+        // Still too long
+        return null;
+    }
+
+    /**
+     * Collect normalized candidate links from RSS items used in the prompt
+     */
+    private function collectCandidateLinks(array $successFeeds): array
+    {
+        $links = [];
+        foreach ($successFeeds as $feedData) {
+            $xmlContent = $feedData['content'];
+            try {
+                $items = $this->parseRssAndGetLatestItems($xmlContent, 2);
+                foreach ($items as $item) {
+                    if (!empty($item['link'])) {
+                        $url = trim((string)$item['link']);
+                        if ($url !== '') {
+                            // Plus permissif: accepter les URLs absolues ET relatives qui ressemblent à des URLs
+                            $isAbsoluteUrl = filter_var($url, FILTER_VALIDATE_URL);
+                            $looksLikeUrl = (str_starts_with($url, '/') && strlen($url) > 1) || 
+                                           str_contains($url, '.') || 
+                                           str_starts_with($url, 'http');
+                            if ($isAbsoluteUrl || $looksLikeUrl) {
+                                $links[] = rtrim($url, "/ ");
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable $t) {
+                // ignore
+            }
+        }
+        // Unique values
+        return array_values(array_unique($links));
+    }
+
+    /**
+     * Sanitize a string to valid UTF-8, removing invalid bytes and control chars.
+     */
+    private function sanitizeUtf8(?string $text): string
+    {
+        if ($text === null || $text === '') {
+            return '';
+        }
+
+        // Remove problematic control characters first
+        $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $text);
+
+        // Ensure string is valid UTF-8
+        if (!mb_detect_encoding($text, 'UTF-8', true)) {
+            $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+            if ($converted !== false) {
+                $text = $converted;
+            } else {
+                // Fallback: try utf8_encode which assumes ISO-8859-1 input
+                $text = @utf8_encode($text);
+            }
+        }
+
+        // Normalize if intl is available
+        if (class_exists('Normalizer')) {
+            $text = \Normalizer::normalize($text, \Normalizer::FORM_C);
+        }
+
+        return $text;
     }
 }
