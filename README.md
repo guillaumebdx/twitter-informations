@@ -2,6 +2,8 @@
 
 Entrer dans le container : docker-compose -f compose.yaml exec app bash
 
+php bin/console app:publish-tweet --dry-run
+
 
 # Cascade Chat Conversation
 

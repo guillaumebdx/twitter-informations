@@ -1,0 +1,15 @@
+INSERT INTO `flux` (`id`, `name`, `url`, `created_at`) VALUES
+(4, 'France 24', 'https://www.france24.com/fr/rss', '2025-09-15 20:09:55'),
+(6, 'Sud Ouest', 'https://www.sudouest.fr/essentiel/rss.xml', '2025-09-15 20:21:31'),
+(7, 'RFI', 'https://www.rfi.fr/en/france/rss', '2025-09-15 20:23:59'),
+(8, 'Courrier international', 'https://www.courrierinternational.com/feed/all/rss.xml', '2025-09-17 17:46:56'),
+(9, '20 minutes', 'https://www.20minutes.fr/feeds/rss-une.xml', '2025-09-17 17:49:43'),
+(10, 'Euronews', 'https://www.euronews.com/rss?level=theme&name=news', '2025-09-19 21:49:43'),
+(11, 'The Local', 'https://feeds.thelocal.com/rss/fr', '2025-09-19 21:51:14'),
+(12, 'Midi Libre', 'https://www.midilibre.fr/rss.xml', '2025-09-19 21:52:45'),
+(13, 'Est Republicain', 'https://www.estrepublicain.fr/rss', '2025-09-19 22:11:23'),
+(14, 'La Croix', 'https://www.la-croix.com/feeds/rss/site.xml', '2025-09-19 22:11:54'),
+(15, 'Marianne', 'https://www.marianne.net/rss.xml', '2025-09-19 22:12:41'),
+(16, 'France Info', 'https://www.franceinfo.fr/en-image.rss', '2025-09-19 23:23:50'),
+(17, 'BFM', 'https://www.bfmtv.com/rss/news-24-7/', '2025-09-19 23:24:21'),
+(18, 'France bleu', 'https://www.francebleu.fr/rss/a-la-une.xml', '2025-09-19 23:24:59');
