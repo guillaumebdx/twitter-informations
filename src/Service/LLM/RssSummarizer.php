@@ -164,10 +164,12 @@ class RssSummarizer
             "Style 8: \"📢 ALERTE CRYPTO : [Monnaie] explose de [%] après [Annonce]\"\n\n" .
             "🎯 Choisis l'info qui fera le BUZZ, utilise un style DIFFÉRENT des infos déjà publiées !";
 
-        // Vérifier la longueur du prompt pour éviter les erreurs de tokens
+        // Vérifier la longueur du prompt (limite plus élevée pour gpt-4o-mini)
         $promptLength = strlen($prompt);
-        if ($promptLength > 15000) {
-            throw new \Exception("Le contenu est trop volumineux pour OpenAI ({$promptLength} caractères). Réduisez le nombre de flux ou leur taille.");
+        $maxLength = ($_ENV['OPENAI_MODEL'] === 'gpt-4o-mini') ? 25000 : 15000;
+        
+        if ($promptLength > $maxLength) {
+            throw new \Exception("Le contenu est trop volumineux pour OpenAI ({$promptLength} caractères). Limite: {$maxLength}. Réduisez le nombre de flux ou leur taille.");
         }
 
         // Vérifier que la clé API est définie

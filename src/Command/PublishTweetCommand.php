@@ -35,7 +35,7 @@ class PublishTweetCommand extends Command
             'feeds',
             'f',
             InputOption::VALUE_OPTIONAL,
-            'Nombre de flux RSS à traiter (1 ou 2, défaut: 2)',
+            'Nombre de flux RSS à traiter (1-4, défaut: 3 pour gpt-4o-mini, 2 pour gpt-3.5-turbo)',
             2
         );
 
@@ -62,9 +62,15 @@ class PublishTweetCommand extends Command
             $io->section('📡 Récupération des flux RSS');
             $feedsCount = (int) $input->getOption('feeds');
             
-            // Valider le nombre de flux
-            if ($feedsCount < 1 || $feedsCount > 2) {
-                $feedsCount = 2;
+            // Définir le défaut selon le modèle OpenAI
+            if ($feedsCount === 0) {
+                $feedsCount = ($_ENV['OPENAI_MODEL'] === 'gpt-4o-mini') ? 3 : 2;
+            }
+            
+            // Valider le nombre de flux (limite plus élevée pour gpt-4o-mini)
+            $maxFeeds = ($_ENV['OPENAI_MODEL'] === 'gpt-4o-mini') ? 4 : 2;
+            if ($feedsCount < 1 || $feedsCount > $maxFeeds) {
+                $feedsCount = ($_ENV['OPENAI_MODEL'] === 'gpt-4o-mini') ? 3 : 2;
             }
             
             $io->text("Récupération de {$feedsCount} flux aléatoire(s) pour traitement LLM...");
